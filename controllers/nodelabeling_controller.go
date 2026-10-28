@@ -334,15 +334,22 @@ func (nlc *nodeLabelingController) updateGPUStateLabels(ctx context.Context, lab
 	cp := nlc.clusterPolicy
 	sandboxEnabled := cp != nil && cp.Spec.SandboxWorkloads.IsEnabled()
 	sandboxMode := ""
+	// Derive the fallback from the ClusterPolicy rather than the package-level
+	// defaultGPUWorkloadConfig, which is only populated by ClusterPolicyController.init()
+	// and may not have run yet when this controller reconciles.
+	defaultWorkload := gpuWorkloadConfigContainer
 	if cp != nil {
 		sandboxMode = cp.Spec.SandboxWorkloads.Mode
+		if isValidWorkloadConfig(cp.Spec.SandboxWorkloads.DefaultWorkload) {
+			defaultWorkload = cp.Spec.SandboxWorkloads.DefaultWorkload
+		}
 	}
 
-	config, err := getWorkloadConfig(labels, sandboxEnabled)
+	config, err := getWorkloadConfigWithDefault(labels, sandboxEnabled, defaultWorkload)
 	if err != nil {
 		nlc.logger.Info("WARNING: failed to get GPU workload config for node; using default",
 			"NodeName", nodeName, "SandboxEnabled", sandboxEnabled,
-			"Error", err, "defaultGPUWorkloadConfig", defaultGPUWorkloadConfig)
+			"Error", err, "defaultGPUWorkloadConfig", defaultWorkload)
 	}
 	gpuWorkloadConfig := &gpuWorkloadConfiguration{
 		config:      config,

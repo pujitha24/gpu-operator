@@ -1375,3 +1375,49 @@ func TestReconcileGPUClusterNodeLabels(t *testing.T) {
 		require.ErrorContains(t, err, "both ClusterPolicy and GPUCluster CRs exist")
 	})
 }
+
+func TestUpdateGPUStateLabelsUsesClusterPolicyDefaultWorkload(t *testing.T) {
+	// The package-level default is only set by ClusterPolicyController.init(); simulate
+	// node labeling running before it.
+	original := defaultGPUWorkloadConfig
+	defaultGPUWorkloadConfig = gpuWorkloadConfigContainer
+	t.Cleanup(func() { defaultGPUWorkloadConfig = original })
+
+	tests := map[string]struct {
+		sandbox          gpuv1.SandboxWorkloadsSpec
+		nodeLabels       map[string]string
+		expectedWorkload string
+	}{
+		"valid default workload applies to unlabeled node": {
+			sandbox:          gpuv1.SandboxWorkloadsSpec{Enabled: new(true), DefaultWorkload: gpuWorkloadConfigVMPassthrough},
+			expectedWorkload: gpuWorkloadConfigVMPassthrough,
+		},
+		"node workload label wins over default": {
+			sandbox:          gpuv1.SandboxWorkloadsSpec{Enabled: new(true), DefaultWorkload: gpuWorkloadConfigVMPassthrough},
+			nodeLabels:       map[string]string{gpuWorkloadConfigLabelKey: gpuWorkloadConfigVMVgpu},
+			expectedWorkload: gpuWorkloadConfigVMVgpu,
+		},
+		"invalid default workload falls back to container": {
+			sandbox:          gpuv1.SandboxWorkloadsSpec{Enabled: new(true), DefaultWorkload: "bogus"},
+			expectedWorkload: gpuWorkloadConfigContainer,
+		},
+		"default ignored when sandbox workloads disabled": {
+			sandbox:          gpuv1.SandboxWorkloadsSpec{Enabled: new(false), DefaultWorkload: gpuWorkloadConfigVMPassthrough},
+			expectedWorkload: gpuWorkloadConfigContainer,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			nlc := &nodeLabelingController{
+				clusterPolicy: &gpuv1.ClusterPolicy{Spec: gpuv1.ClusterPolicySpec{SandboxWorkloads: tc.sandbox}},
+				logger:        logr.Discard(),
+			}
+			labels := mergeLabels(map[string]string{commonGPULabelKey: commonGPULabelValue}, tc.nodeLabels)
+			nlc.updateGPUStateLabels(context.Background(), labels, "test-node")
+			for key, value := range gpuStateLabels[tc.expectedWorkload] {
+				assert.Equal(t, value, labels[key], key)
+			}
+		})
+	}
+}

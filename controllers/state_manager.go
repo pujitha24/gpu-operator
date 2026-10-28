@@ -388,6 +388,12 @@ func isValidWorkloadConfig(workloadConfig string) bool {
 // If an error occurs when searching for the workload config,
 // return defaultGPUWorkloadConfig.
 func getWorkloadConfig(labels map[string]string, sandboxEnabled bool) (string, error) {
+	return getWorkloadConfigWithDefault(labels, sandboxEnabled, defaultGPUWorkloadConfig)
+}
+
+// getWorkloadConfigWithDefault is getWorkloadConfig with an explicit fallback, for callers
+// that must not depend on the package-level default being populated by another controller.
+func getWorkloadConfigWithDefault(labels map[string]string, sandboxEnabled bool, defaultConfig string) (string, error) {
 	if !sandboxEnabled {
 		return gpuWorkloadConfigContainer, nil
 	}
@@ -395,9 +401,9 @@ func getWorkloadConfig(labels map[string]string, sandboxEnabled bool) (string, e
 		if isValidWorkloadConfig(workloadConfig) {
 			return workloadConfig, nil
 		}
-		return defaultGPUWorkloadConfig, fmt.Errorf("invalid GPU workload config: %v", workloadConfig)
+		return defaultConfig, fmt.Errorf("invalid GPU workload config: %v", workloadConfig)
 	}
-	return defaultGPUWorkloadConfig, fmt.Errorf("no GPU workload config found")
+	return defaultConfig, fmt.Errorf("no GPU workload config found")
 }
 
 // getEffectiveStateLabels returns the state labels to apply for the given workload config and sandbox mode.
